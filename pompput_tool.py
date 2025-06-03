@@ -87,71 +87,56 @@ with col1:
     inschakel_peil = bodem + hoogte_delta
     max_toegestaan = bob - veiligheidsmarge
 
-    if inschakel_peil > max_toegestaan:
-        st.error(f"⚠️ Inschakelpeil ({round(inschakel_peil, 2)} m NAP) ligt boven de toegestane max. ({round(max_toegestaan, 2)} m NAP)! Pas pomp, looptijd of put aan.")
-        rapport_data.append(f"WAARSCHUWING: Inschakelpeil ({round(inschakel_peil, 2)} m NAP) boven max. ({round(max_toegestaan, 2)} m NAP)")
-
-    st.write(f"Buffer: {round(buffervolume, 3)} m³ | Δh: {round(hoogte_delta, 3)} m")
-    rapport_data.append(f"Buffervolume: {round(buffervolume, 3)} m³")
-
-with col2:
-    st.subheader("Visualisatie pompput")
-    fig = go.Figure()
-    fig.add_trace(go.Mesh3d(x=[0, lengte, lengte, 0, 0, lengte, lengte, 0],
-                            y=[0, 0, breedte, breedte, 0, 0, breedte, breedte],
-                            z=[bodem]*4 + [mv]*4, opacity=0.3, color='blue'))
-    fig.add_trace(go.Mesh3d(x=[0, lengte, lengte, 0], y=[0, 0, breedte, breedte],
-                            z=[inschakel_peil]*4, opacity=0.6, color='cyan'))
-    fig.update_layout(scene=dict(zaxis_title='NAP (m)'), margin=dict(l=0, r=0, b=0, t=40))
-    st.plotly_chart(fig, use_container_width=True)
-
-    st.header("3. Leiding en drukverlies")
+    st.header("3. Leidingsysteem invoer")
     leidinglengte = st.number_input("Leidinglengte (m)", 1.0, 1000.0, 20.0)
     dn = st.selectbox("Leidingdiameter DN (mm)", sorted(k_waardes_dict.keys()))
     d_m = dn / 1000
-    v = q_pomp / 1000 / (math.pi * (d_m / 2)**2)
-
     f = st.number_input("Wrijvingsfactor f", 0.01, 0.1, 0.03)
-    g = 9.81
-    h_frecht = f * (leidinglengte / d_m) * (v**2 / (2 * g))
 
-    st.subheader("Appendages")
     totaal_k = 0.0
     for appendage, k in k_waardes_dict[dn].items():
         aantal = st.number_input(f"Aantal {appendage}", 0, 10, 0)
         totaal_k += aantal * k
 
-    st.subheader("Balkeerklep")
     gebruik_bal = st.radio("Balkeerklep aanwezig?", ["Ja", "Nee"])
     if gebruik_bal == "Ja":
         keuze_bal = st.radio("K-waarde balkeerklep", ["Automatisch", "Handmatig"])
         if keuze_bal == "Handmatig":
             k_bal = st.number_input("K-waarde balkeerklep", 0.0, 100.0, 10.0)
         else:
+            v = q_pomp / 1000 / (math.pi * (d_m / 2)**2)
             k_bal = 25 if v < 0.6 else 15 if v < 1.2 else 8 if v < 2.0 else 5
             st.write(f"Automatische waarde: {k_bal}")
         totaal_k += k_bal
 
+with col2:
+    st.subheader("Visualisatie pompput")
+    fig = go.Figure()
+    fig.add_trace(go.Mesh3d(x=[0, lengte, lengte, 0, 0, lengte, lengte, 0], y=[0, 0, breedte, breedte, 0, 0, breedte, breedte], z=[bodem]*4 + [mv]*4, opacity=0.3, color='blue'))
+    fig.add_trace(go.Mesh3d(x=[0, lengte, lengte, 0], y=[0, 0, breedte, breedte], z=[inschakel_peil]*4, opacity=0.6, color='cyan'))
+    fig.update_layout(scene=dict(zaxis_title='NAP (m)'), margin=dict(l=0, r=0, b=0, t=40))
+    st.plotly_chart(fig, use_container_width=True)
+
+    if inschakel_peil > max_toegestaan:
+        st.error(f"⚠️ Inschakelpeil ({round(inschakel_peil, 2)} m NAP) ligt boven de toegestane max. ({round(max_toegestaan, 2)} m NAP)! Pas pomp, looptijd of put aan.")
+    st.write(f"Buffer: {round(buffervolume, 3)} m³ | Δh: {round(hoogte_delta, 3)} m")
+
+    v = q_pomp / 1000 / (math.pi * (d_m / 2)**2)
+    g = 9.81
+    h_frecht = f * (leidinglengte / d_m) * (v**2 / (2 * g))
     h_k = totaal_k * (v**2 / (2 * g))
     htot = h_frecht + h_k
 
+    st.write("**Resultaten drukverlies:**")
     st.write(f"Rechte leidingverlies: {round(h_frecht, 3)} m")
     st.write(f"Appendageverlies incl. balkeerklep: {round(h_k, 3)} m")
     st.write(f"Totale drukverlies: {round(htot, 3)} m")
 
-    rapport_data.append(f"Totale drukverlies: {round(htot, 3)} m")
-
-    st.header("4. Advies")
     max_v = 1.5  # m/s
-    benodigde_d = math.sqrt((4 * (q_pomp / 1000)) / (math.pi * max_v)) * 1000  # in mm
-
+    benodigde_d = math.sqrt((4 * (q_pomp / 1000)) / (math.pi * max_v)) * 1000
     st.write(f"**Advies leidingdiameter bij max snelheid {max_v} m/s:** {int(round(benodigde_d))} mm")
-    rapport_data.append(f"Advies leidingdiameter: {int(round(benodigde_d))} mm")
+    st.write(f"**Advies pompcapaciteit (voorlooptijd {int(looptijd)} s):** {round(q_pomp, 1)} l/s ({round(q_pomp*3.6, 1)} m³/h)")
 
-    st.write(f"**Advies pompcapaciteit (voorlooptijd {int(looptijd)} s):** {round(q_pomp, 1)} l/s")
-    rapport_data.append(f"Pompcapaciteit: {round(q_pomp, 1)} l/s")
-
-    st.header("5. Rapport export")
     if st.button("Genereer PDF"):
         pdf = FPDF()
         pdf.add_page()
