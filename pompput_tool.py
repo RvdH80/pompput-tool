@@ -3,83 +3,87 @@ import math
 
 st.set_page_config(layout="wide")
 
-st.title("Pompput Dimensionering Tool voor Monteurs")
+st.title("Pompput Berekeningstool")
 
-# === Functies ===
-def bereken_afvalwater_per_persoon(aantal_bewoners, productie_per_persoon):
-    return aantal_bewoners * productie_per_persoon / 1000  # m³/dag
+# --- Keuzemenu bovenaan ---
+keuze = st.selectbox("Wat wil je berekenen?", [
+    "1. Totaal afvalwaterproductie",
+    "2. Advies pompcapaciteit",
+    "3. Benodigd buffervolume onder BOB",
+    "4. Advies leidingdiameter",
+    "5. Inhoud pompput boven BOB",
+    "6. In- en uitschakelhoogtes pomp"
+])
 
-def bereken_afvalwater_regen(opp_m2, t_waarde, c_factor):
-    return opp_m2 * t_waarde * c_factor / 1000  # m³/dag
+# === 1. AFVALWATERPRODUCTIE ===
+if keuze == "1. Totaal afvalwaterproductie":
+    methode = st.radio("Kies invoermethode", ["Aantal bewoners", "Afwaterend oppervlak"])
 
-def bereken_inhoud_put_afhankelijk_van_loopduur(pomp_capaciteit_lps, looptijd_s):
-    return pomp_capaciteit_lps * looptijd_s  # liter
-
-def bereken_in_uit_schakelhoogtes(put_diameter, buffervolume):
-    oppervlakte = math.pi * (put_diameter / 2)**2
-    hoogte = buffervolume / (oppervlakte * 1000)
-    return hoogte
-
-# === Keuze menu ===
-opties = {
-    "1. Totaal afvalwaterproductie": 1,
-    "2. Advies pompcapaciteit": 2,
-    "3. Benodigd buffervolume onder BOB": 3,
-    "7. Advies leidingdiameter": 7,
-    "8. Inhoud pompput boven BOB": 8,
-    "9. In- en uitschakelhoogtes pomp": 9
-}
-
-keuze = st.sidebar.selectbox("Welke berekening wil je uitvoeren?", list(opties.keys()))
-st.sidebar.markdown("_Kies een optie en vul de benodigde gegevens in._")
-
-col1, col2 = st.columns([1, 1])
-
-with col1:
-    st.header("Invoerwaarden")
-    afvalbron = st.radio("Afvalwaterbron", ["Huishoudelijk", "Regenwaterafvoer"])
-
-    if afvalbron == "Huishoudelijk":
+    if methode == "Aantal bewoners":
         bewoners = st.number_input("Aantal bewoners", min_value=1, value=4)
-        productie_persoon = st.number_input("Afvalwaterproductie per persoon (L/dag)", value=120)
-        afvalwater = bereken_afvalwater_per_persoon(bewoners, productie_persoon)
+        productie = st.number_input("Afvalwaterproductie per persoon (L/dag)", value=120)
+        totaal = bewoners * productie / 1000
     else:
-        opp = st.number_input("Oppervlakte (m²)", value=100)
-        t_waarde = st.number_input("T-waarde (bijv. 0.03 voor T10)", value=0.03)
-        c_factor = st.number_input("Afvoercoëfficiënt C", value=0.9)
-        afvalwater = bereken_afvalwater_regen(opp, t_waarde, c_factor)
+        oppervlak = st.number_input("Afwaterend oppervlak (m²)", value=100.0)
+        T_waarde = st.number_input("T-waarde (mm/jr)", value=800.0)
+        totaal = oppervlak * T_waarde / 1_000_000  # m³/jaar
 
-    pomp_capaciteit = st.number_input("Pomp capaciteit (L/s)", value=1.5)
-    loopduur = st.number_input("Pomploopduur (s)", value=60)
-    put_diameter = st.number_input("Diameter put (m)", value=1.2)
-    hoogte_bob = st.number_input("Hoogte BOB (m)", value=0.5)
+    st.success(f"Totaal afvalwater: {totaal:.2f} m³ {'per dag' if methode == 'Aantal bewoners' else 'per jaar'}")
 
-with col2:
-    st.header("Resultaten")
+# === 2. ADVIES POMPCAPACITEIT ===
+elif keuze == "2. Advies pompcapaciteit":
+    totaal_m3_per_dag = st.number_input("Totaal afvalwater (m³/dag)", value=1.2)
+    schakelmethode = st.radio("Bepaling schakelmoment", ["Aantal schakelingen per uur", "Looptijd per cyclus (s)"])
 
-    if keuze.startswith("1"):
-        st.subheader("Totaal afvalwaterproductie")
-        st.markdown(f"**Afvalwaterproductie:** {afvalwater:.2f} m³/dag")
+    if schakelmethode == "Aantal schakelingen per uur":
+        schakel_freq = st.number_input("Aantal schakelingen per uur", value=4)
+        inhoud_per_schakeling = totaal_m3_per_dag / 24 / schakel_freq * 1000  # liter
+    else:
+        looptijd = st.number_input("Looptijd per cyclus (seconden)", value=60)
+        cycli_per_dag = st.number_input("Aantal cycli per dag", value=48)
+        inhoud_per_schakeling = totaal_m3_per_dag * 1000 / cycli_per_dag
 
-    if keuze.startswith("2"):
-        st.subheader("Advies pompcapaciteit")
-        st.markdown(f"**Ingevoerde capaciteit:** {pomp_capaciteit:.2f} L/s ({pomp_capaciteit * 3.6:.2f} m³/h)")
+    advies_lps = inhoud_per_schakeling / looptijd
+    st.success(f"Advies pompcapaciteit: {advies_lps:.2f} L/s  ({advies_lps * 3.6:.2f} m³/u)")
 
-    if keuze.startswith("3"):
-        st.subheader("Benodigd buffervolume onder BOB")
-        buffervolume = bereken_inhoud_put_afhankelijk_van_loopduur(pomp_capaciteit, loopduur)
-        st.markdown(f"**Benodigd volume:** {buffervolume:.2f} liter")
+# === 3. BUFFERVOLUME ONDER BOB ===
+elif keuze == "3. Benodigd buffervolume onder BOB":
+    capaciteit = st.number_input("Pompcapaciteit (L/s)", value=1.5)
+    looptijd = st.number_input("Looptijd pomp (s)", value=60)
+    marge = st.number_input("Veiligheidsmarge (m)", value=0.3)
+    diameter = st.number_input("Putdiameter (m)", value=1.0)
 
-    if keuze.startswith("8"):
-        st.subheader("Inhoud pompput boven BOB")
-        hoogte_rest = 2.0 - hoogte_bob
-        inhoud_boven_bob = math.pi * (put_diameter/2)**2 * hoogte_rest * 1000
-        st.markdown(f"**Volume boven BOB:** {inhoud_boven_bob:.1f} liter")
+    volume = capaciteit * looptijd  # liter
+    extra_volume = math.pi * (diameter/2)**2 * marge * 1000
+    totaal = volume + extra_volume
 
-    if keuze.startswith("9"):
-        st.subheader("In-/uitschakelhoogte van pomp")
-        buffervolume = bereken_inhoud_put_afhankelijk_van_loopduur(pomp_capaciteit, loopduur)
-        inschakel = hoogte_bob
-        uitschakel = hoogte_bob + bereken_in_uit_schakelhoogtes(put_diameter, buffervolume)
-        st.markdown(f"**Inschakelhoogte:** {inschakel:.2f} m")
-        st.markdown(f"**Uitschakelhoogte:** {uitschakel:.2f} m")
+    st.success(f"Benodigd buffervolume onder BOB: {totaal:.2f} liter")
+
+# === 4. ADVIES LEIDINGDIAMETER (placeholder) ===
+elif keuze == "4. Advies leidingdiameter":
+    st.warning("Deze optie wordt nog uitgewerkt. Voor nu handmatig bepalen.")
+
+# === 5. INHOUD POMPPUT BOVEN BOB ===
+elif keuze == "5. Inhoud pompput boven BOB":
+    hoogte = st.number_input("Hoogte tussen BOB en max waterniveau (m)", value=0.5)
+    diameter = st.number_input("Putdiameter (m)", value=1.0)
+    inhoud = math.pi * (diameter / 2)**2 * hoogte * 1000
+
+    st.success(f"Inhoud boven BOB: {inhoud:.2f} liter")
+
+# === 6. IN- EN UITSCHAKELHOOGTES ===
+elif keuze == "6. In- en uitschakelhoogtes pomp":
+    capaciteit = st.number_input("Pompcapaciteit (L/s)", value=1.5)
+    looptijd = st.number_input("Looptijd pomp (s)", value=60)
+    diameter = st.number_input("Putdiameter (m)", value=1.0)
+    marge = st.number_input("Veiligheidsmarge (m)", value=0.3)
+
+    volume = capaciteit * looptijd  # liter
+    hoogte_delta = (volume / 1000) / (math.pi * (diameter/2)**2)
+
+    max_niveau = st.number_input("Maximaal waterniveau (m t.o.v. BOB)", value=0.5)
+    inschakel = max_niveau - hoogte_delta
+    uitschakel = max_niveau
+
+    st.success(f"Inschakelhoogte pomp: {inschakel:.2f} m boven BOB")
+    st.success(f"Uitschakelhoogte pomp: {uitschakel:.2f} m boven BOB")
